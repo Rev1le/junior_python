@@ -7,8 +7,9 @@ from pandas import DataFrame as df
 import pandas
 
 TOKEN = "6259873610:AAEoPOxowITn7nM8fT2r3yB4MZ0PPV6hmA4"
-TELEGRAM_API = "https://api.telegram.org/bot"
+DB_NAME = "sampleDB"
 
+TELEGRAM_API = "https://api.telegram.org/bot"
 DB_CONN = "mongodb://localhost:27017"
 
 class Payments:
@@ -42,13 +43,13 @@ class Payments:
             }
 
 
-
 class DB:
     def __init__(self):
-        self.db = MongoClient(DB_CONN)["sampleDB"]
+        self.db = MongoClient(DB_CONN)[DB_NAME]
     
     async def get_all_items(self):
         return self.db["sample_collection"].find()
+
 
 class Bot:
 
@@ -121,12 +122,9 @@ class Bot:
         except:
             print("Invalid json response")
 
-       
-
-
-
 
 if __name__ == "__main__":
     
     bot = Bot(TOKEN)
+    
     asyncio.run(bot.run())
