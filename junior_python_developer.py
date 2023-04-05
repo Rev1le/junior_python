@@ -3,8 +3,7 @@ import aiohttp
 import json
 from pymongo import MongoClient
 from dateutil import parser
-from pandas import DataFrame as df
-import pandas
+import pandas as pd
 
 TOKEN = "6259873610:AAEoPOxowITn7nM8fT2r3yB4MZ0PPV6hmA4"
 DB_NAME = "sampleDB"
@@ -14,9 +13,9 @@ DB_CONN = "mongodb://localhost:27017"
 
 class Payments:
 
-    group_freq_dict = {"month": "M", "day": "D", "hour": "H"}
+    group_freq_dict = {"month": "MS", "day": "D", "hour": "H"}
 
-    async def payment_calc(self, dt_from: str, dt_upto: str, group_type: str, data_frame: df):
+    async def payment_calc(self, dt_from: str, dt_upto: str, group_type: str, data_frame):
         
         try:
             start_date = parser.parse(dt_from)
@@ -25,21 +24,33 @@ class Payments:
         except e:
             print(e)
 
+        # Making a cut of the dates
         df = data_frame[data_frame["dt"].between(start_date, end_date, inclusive = "both")]
 
+        # Generated dates 
+        date_range = pd.date_range(start=start_date, end=end_date, freq = group_freq)
+
+        d = {'dt': date_range, 'value': 0,}
+        df_datas = pd.DataFrame(data=d)                                   
+
+        # Concat dataframes 
+        df = pd.concat([df, df_datas])
+        print("Result:", df)
+
+        # Group by dates and calculate the amount of value for the period group_frequency
+
         group_freq = self.group_freq_dict[group_type]
-        result_payments = df.groupby(pandas.Grouper(key = "dt", freq=group_freq))["value"].sum()
-        
-        print("Result:", result_payments)
+        result_payments = df.groupby(pd.Grouper(key = "dt", freq=group_freq))["value"].sum()
 
         result_df = result_payments.to_frame()
-        
         result_df.reset_index(inplace=True)
+
+        # Rename columns for correct output
         result_df = result_df.rename(columns = {'dt':'labels', 'value': 'dataset'})
 
         return {
-            "labels": json.loads(result_df["labels"].to_json(orient="split", index=False, date_format="iso"))["data"], 
-            "dataset": json.loads(result_df["dataset"].to_json(orient="split", index=False))["data"]
+            "dataset": json.loads(result_df["dataset"].to_json(orient="split", index=False))["data"],
+            "labels": json.loads(result_df["labels"].to_json(orient="split", index=False, date_format="iso", date_unit="s"))["data"]
             }
 
 
@@ -77,7 +88,6 @@ class Bot:
                 for update in updates:
                     await self.update_handler(update, session)
 
-
     async def receive_updates(self, session):
         
         updates_url = self.api_url + "/getUpdates"
@@ -108,19 +118,31 @@ class Bot:
             group_type = json_message_text ["group_type"]
 
             db_data = await self.db.get_all_items()
+        
+        except:
+            send_message_url = self.api_url + "/sendMessage"
+            params_send_message_url = {"chat_id": chat_id, "text": "Incorrected json message"}
 
-            result = await self.payments.payment_calc(dt_from, dt_upto, group_type, df(data=db_data))
+            async with session.get(send_message_url, params = params_send_message_url) as response:
+                print(response)
 
-            print(result)
-
+        try:
+            
+            # Result payments in dict format
+            result = await self.payments.payment_calc(dt_from, dt_upto, group_type, pd.DataFrame(data=db_data))
+            
             send_message_url = self.api_url + "/sendMessage"
             params_send_message_url = {"chat_id": chat_id, "text": json.dumps(result)}
-
             async with session.get(send_message_url, params = params_send_message_url) as response:
                 print(response)
         
         except:
-            print("Invalid json response")
+            send_message_url = self.api_url + "/sendMessage"
+            params_send_message_url = {"chat_id": chat_id, "text": "Payment calculation error"}
+
+            async with session.get(send_message_url, params = params_send_message_url) as response:
+                print(response)
+
 
 
 if __name__ == "__main__":
